@@ -2,9 +2,12 @@
 #include <string>
 #include <vector>
 #include <sstream>
+#include <cstdlib>
 #include <unordered_set>
 #include <unordered_map>
 #include <functional>
+#include <span>
+#include <iterator>
 
 //command
 std::vector<std::string> token(std::string user_input);
@@ -13,9 +16,11 @@ std::vector<std::string> token(std::string user_input);
 using CommandFn = std::function<void(std::vector<std::string>&)>;
 void echo(const std::vector<std::string> &tokens);
 void type(std::vector<std::string>& tokens,const std::unordered_map<std::string, CommandFn>& valid_command);
+std::string get_env_var( std::string const & key );
 
 //command map
 std::unordered_map<std::string,CommandFn> valid_command ;
+
 
 int main() {
   std::string user_input;
@@ -89,14 +94,38 @@ void echo(const std::vector<std::string>&tokens) {
 }
 
 //fixed the type function 
-void type(std::vector<std::string>& tokens,const std::unordered_map<std::string, CommandFn>& commands) {
-    if (tokens.size() < 2) {
-        std::cout << "type: missing argument, enter a command name after type\n";
-        return;
-    }
-    if (commands.count(tokens[1])) {
-        std::cout << tokens[1] << " is a builtin\n";
-    } else {
-        std::cout << tokens[1] << " is not a builtin\n";
+void type(std::vector<std::string>& tokens,const std::unordered_map<std::string, CommandFn>& valid_command) {
+        if (tokens.size() < 2) {
+            std::cout << "type: missing argument, enter a command name after type\n";
+            return;
+        }
+    for(std::size_t i=1;i<tokens.size();i++){
+        if (valid_command.count(tokens[i])) {
+            std::cout << tokens[i]<< " is a shell builtin\n";
+        }
+        else{
+            std::string retval;
+            retval = get_env_var();
+            if(retval.length() != 0){
+                std::cout << tokens[0] << " :"<< retval;
+            }
+
+            else{
+            std::cout << tokens[i] << ": not found\n";
+            }
+        }
+        
     }
 }
+
+//to search path
+std::string get_env_var( std::string const & key ) {                                 
+    char * val;                                                                        
+    val = getenv( key.c_str() );                                                       
+    std::string retval = "";                                                           
+    if (val != NULL) {                                                                 
+        retval = val;                                                                    
+    }                                                                                  
+    return retval;                                                                        
+}         
+
