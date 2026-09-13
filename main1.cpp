@@ -8,6 +8,7 @@
 #include <functional>
 #include <span>
 #include <iterator>
+#include <filesystem>
 
 //command
 std::vector<std::string> token(std::string user_input);
@@ -17,6 +18,10 @@ using CommandFn = std::function<void(std::vector<std::string>&)>;
 void echo(const std::vector<std::string> &tokens);
 void type(std::vector<std::string>& tokens,const std::unordered_map<std::string, CommandFn>& valid_command);
 std::string get_env_var( std::string const & key );
+std::string resolve_executable_in_path(const std::string& command_name);
+std::unordered_map<std::string, std::string> aliases;
+std::unordered_set<std::string> keywords;
+std::unordered_map<std::string, std::string> shell_functions;
 
 //command map
 std::unordered_map<std::string,CommandFn> valid_command ;
@@ -29,11 +34,18 @@ int main() {
   std::cerr << std::unitbuf;
   bool running = true;
 
+  aliases["ll"] = "ls -l";
+  aliases["la"] = "ls -a";
+  shell_functions["myfunc"] = "echo hello";
+  keywords = {
+      "if", "then", "else", "elif", "fi", "for", "while", "until", "do", "done",
+      "case", "esac", "function", "select", "in", "time", "coproc"
+  };
+
     valid_command["exit"] = [&running](std::vector<std::string>& tokens) {
     running = false;
     };
-    valid_command["echo"] = echo;                              
-    valid_command["exit"] = [&running](std::vector<std::string>& tokens) { running = false; };
+    valid_command["echo"] = echo;
     valid_command["type"] = [](std::vector<std::string>& tokens) { type(tokens, valid_command); };
 
 
@@ -95,37 +107,94 @@ void echo(const std::vector<std::string>&tokens) {
 
 //fixed the type function 
 void type(std::vector<std::string>& tokens,const std::unordered_map<std::string, CommandFn>& valid_command) {
-        if (tokens.size() < 2) {
-            std::cout << "type: missing argument, enter a command name after type\n";
-            return;
-        }
-    for(std::size_t i=1;i<tokens.size();i++){
-        if (valid_command.count(tokens[i])) {
-            std::cout << tokens[i]<< " is a shell builtin\n";
-        }
-        else{
-            std::string retval;
-            retval = get_env_var();
-            if(retval.length() != 0){
-                std::cout << tokens[0] << " :"<< retval;
-            }
+    if (tokens.size() < 2) {
+        std::cout << "type: missing argument, enter a command name after type\n";
+        return;
+    }
 
-            else{
-            std::cout << tokens[i] << ": not found\n";
-            }
+    for (std::size_t i = 1; i < tokens.size(); ++i) {
+        const std::string& name = tokens[i];
+
+        if (aliases.count(name)) {
+            std::cout << name << " is aliased to '" << aliases[name] << "'\n";
+            continue;
         }
-        
+
+        if (valid_command.count(name)) {
+            std::cout << name << " is a shell builtin\n";
+            continue;
+        }
+
+        if (shell_functions.count(name)) {
+            std::cout << name << " is a function\n";
+            continue;
+        }
+
+        if (keywords.count(name)) {
+            std::cout << name << " is a shell keyword\n";
+            continue;
+        }
+
+        const std::string resolved = resolve_executable_in_path(name);
+        if (!resolved.empty()) {
+            std::cout << name << " is " << resolved << "\n";
+            continue;
+        }
+
+        std::cout << name << ": not found\n";
     }
 }
 
+std::string resolve_executable_in_path(const std::string& command_name) {
+    if (command_name.empty()) {
+        return "";
+    }
+
+    std::filesystem::path command_path(command_name);
+    if (command_path.is_absolute() || command_name.find('/') != std::string::npos || command_name.find('\\') != std::string::npos) {
+        if (std::filesystem::exists(command_path) && std::filesystem::is_regular_file(command_path)) {
+            return command_path.string();
+        }
+        return "";
+    }
+
+    const char* path_value = std::getenv("PATH");
+    if (path_value == nullptr) {
+        return "";
+    }
+
+    std::stringstream path_stream(path_value);
+    std::string path_dir;
+    while (std::getline(path_stream, path_dir, ';')) {
+        if (path_dir.empty()) {
+            continue;
+        }
+
+        const std::filesystem::path candidate = std::filesystem::path(path_dir) / command_name;
+        if (std::filesystem::exists(candidate) && std::filesystem::is_regular_file(candidate)) {
+            return candidate.string();
+        }
+
+        const char* path_ext = std::getenv("PATHEXT");
+        if (path_ext != nullptr) {
+            std::stringstream ext_stream(path_ext);
+            std::string extension;
+            while (std::getline(ext_stream, extension, ';')) {
+                if (extension.empty()) {
+                    continue;
+                }
+
+                const std::filesystem::path with_extension = std::filesystem::path(path_dir) / (command_name + extension);
+                if (std::filesystem::exists(with_extension) && std::filesystem::is_regular_file(with_extension)) {
+                    return with_extension.string();
+                }
+            }
+        }
+    }
+
+    return "";
+}
+
 //to search path
-std::string get_env_var( std::string const & key ) {                                 
-    char * val;                                                                        
-    val = getenv( key.c_str() );                                                       
-    std::string retval = "";                                                           
-    if (val != NULL) {                                                                 
-        retval = val;                                                                    
-    }                                                                                  
-    return retval;                                                                        
-}         
+
 
